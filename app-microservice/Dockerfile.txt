@@ -1,0 +1,12 @@
+FROM python:3.7
+
+RUN python -m pip install flask flask-cors gunicorn tensorflow pillow
+
+WORKDIR /app
+
+ADD test_app.py test_app.py
+
+
+EXPOSE 8080
+
+CMD [ "gunicorn", "--bind", "0.0.0.0:8080", "test_app:app" ]

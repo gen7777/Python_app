@@ -1,0 +1,117 @@
+Предположим что наше приложение написанно на python называется test_app.py
+
+Создадим Dockerfile для микросервиса 
+
+---------------------------------------------------------------------
+FROM python:3.7
+
+RUN python -m pip install flask flask-cors gunicorn tensorflow pillow
+
+WORKDIR /app
+
+ADD test_app.py test_app.py
+
+
+EXPOSE 8080
+
+CMD [ "gunicorn", "--bind", "0.0.0.0:8080", "test_app:app" ]
+-----------------------------------------------------------------------------------
+
+В таком виде микросервис уже можно использовать в однопоточном режиме, для этого
+нужно выполнить следующие команды в папке app-microservice:
+
+docker build -t app_microservice
+
+docker run -d -p 8080:8080 app_microservice
+
+При этом в качестве внутреннего веб-сервера выступает Gunicorn
+
+Исходя из принципа однопроцесовости для контейнера функцию распараллеливания лучше
+ реализовать через nginx
+ 
+ nginx балансер
+ 
+ Чтобы балансировщик нагрузки работал, нужно, чтобы Nginx перенаправлял запросы на
+ порт 8080, который слушает наш микросервис. Исходный код в файле nginx.conf
+
+--------------------------------------------------------------------------------
+user  nginx;events {
+    worker_connections   1000;
+}
+http {
+        server {
+              listen 4000;
+              location / {
+                proxy_pass http://app-microservice:8080;
+              }
+        }
+}
+----------------------------------------------------------------------------------
+
+В файле docker-compose.yml  задается распараллелевание созданного ранее микросервиса,
+ здесь app-microservice с помощью параметра replicas
+
+docker-compose.yml
+-----------------------------------------------------------------------------------
+version: '3.7'
+
+services:
+    app-microservice:
+        build:
+            context: ./app-microservice
+        image: app-microservice
+        restart: unless-stopped
+        expose:
+            - "8080"
+        deploy:
+            replicas: 3
+
+
+    nginx-balancer:
+        image: nginx
+        container_name: nginx-balancer
+        restart: unless-stopped
+        volumes:
+            - ./nginx-balancer/nginx.conf:/etc/nginx/nginx.conf:ro
+        depends_on:
+            - app-microservice
+        ports:
+            - "8080:4000"
+
+
+    nginx-html:
+        image: nginx
+        container_name: nginx-html
+        restart: unless-stopped
+        volumes:
+            - ./html:/usr/share/nginx/html:ro
+        depends_on:
+            - nginx-balancer
+        ports:
+            - "4000:8080"
+------------------------------------------------------------------------------------			
+
+Микросервис также продолжает слушать порт 8080 только внутри виртуальной сети докера,
+а nginx-balancer перенаправляет трафик от порта 4000 к порту 8080 также внутри
+виртуальной сети докера, а уже порт 8080 внешней сети я пробросил на 4000
+внутренний порт nginx-balancer.
+
+Чтобы всё запустить, необходимо выполнить в корневой папке проекта:
+
+docker-compose up --build
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
